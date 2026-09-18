@@ -5,7 +5,12 @@ use anchor_spl::{
 };
 use constant_product_curve::ConstantProduct;
 
-use crate::{error::AmmError, state::Config};
+use crate::{
+    constants::{CONFIG_SEED, LP_SEED, TOKEN_PRECISION, ZERO_AMOUNT},
+    error::AmmError,
+    state::Config,
+    token_side::{select_for_side, TokenSide},
+};
 
 #[derive(Accounts)]
 pub struct Withdraw<'info> {
@@ -16,13 +21,13 @@ pub struct Withdraw<'info> {
     #[account(
         has_one = mint_x,
         has_one = mint_y,
-        seeds = [b"config", config.seed.to_le_bytes().as_ref()],
+        seeds = [CONFIG_SEED, config.seed.to_le_bytes().as_ref()],
         bump = config.config_bump,
     )]
     pub config: Box<Account<'info, Config>>,
     #[account(
         mut,
-        seeds = [b"lp", config.key().as_ref()],
+        seeds = [LP_SEED, config.key().as_ref()],
         bump = config.lp_bump,
     )]
     pub mint_lp: Box<Account<'info, Mint>>,
@@ -69,36 +74,38 @@ impl<'info> Withdraw<'info> {
         min_y: u64,  // Minimum amount of token Y that the user wants to receive
     ) -> Result<()> {
         require!(!self.config.locked, AmmError::PoolLocked);
-        require_neq!(amount, 0, AmmError::InvalidAmount);
+        require_neq!(amount, ZERO_AMOUNT, AmmError::InvalidAmount);
+        require!(amount <= self.mint_lp.supply, AmmError::InsufficientBalance);
 
         let amounts = ConstantProduct::xy_withdraw_amounts_from_l(
             self.vault_x.amount,
             self.vault_y.amount,
             self.mint_lp.supply,
             amount,
-            6,
+            TOKEN_PRECISION,
         )
-        .unwrap();
+        .map_err(AmmError::from)?;
         let (x, y) = (amounts.x, amounts.y);
 
         require!(x >= min_x && y >= min_y, AmmError::SlippageExceeded);
 
         self.burn_lp_tokens(amount)?;
-        self.withdraw_tokens(true, x)?;
-        self.withdraw_tokens(false, y)
+        self.withdraw_tokens(TokenSide::X, x)?;
+        self.withdraw_tokens(TokenSide::Y, y)
     }
 
-    pub fn withdraw_tokens(&self, is_x: bool, amount: u64) -> Result<()> {
-        let (from, to) = match is_x {
-            true => (
+    fn withdraw_tokens(&self, side: TokenSide, amount: u64) -> Result<()> {
+        let (from, to) = select_for_side(
+            side,
+            (
                 self.vault_x.to_account_info(),
                 self.user_x.to_account_info(),
             ),
-            false => (
+            (
                 self.vault_y.to_account_info(),
                 self.user_y.to_account_info(),
             ),
-        };
+        );
 
         transfer(
             CpiContext::new_with_signer(
@@ -109,7 +116,7 @@ impl<'info> Withdraw<'info> {
                     authority: self.config.to_account_info(),
                 },
                 &[&[
-                    b"config",
+                    CONFIG_SEED,
                     &self.config.seed.to_le_bytes(),
                     &[self.config.config_bump],
                 ]],
@@ -118,7 +125,7 @@ impl<'info> Withdraw<'info> {
         )
     }
 
-    pub fn burn_lp_tokens(&self, amount: u64) -> Result<()> {
+    fn burn_lp_tokens(&self, amount: u64) -> Result<()> {
         burn(
             CpiContext::new(
                 self.token_program.key(),

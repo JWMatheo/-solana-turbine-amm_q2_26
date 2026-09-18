@@ -5,7 +5,12 @@ use anchor_spl::{
 };
 use constant_product_curve::ConstantProduct;
 
-use crate::{error::AmmError, state::Config};
+use crate::{
+    constants::{CONFIG_SEED, LP_SEED, TOKEN_PRECISION, ZERO_AMOUNT},
+    error::AmmError,
+    state::Config,
+    token_side::{select_for_side, TokenSide},
+};
 
 #[derive(Accounts)]
 pub struct Deposit<'info> {
@@ -16,13 +21,13 @@ pub struct Deposit<'info> {
     #[account(
         has_one = mint_x,
         has_one = mint_y,
-        seeds = [b"config", config.seed.to_le_bytes().as_ref()],
+        seeds = [CONFIG_SEED, config.seed.to_le_bytes().as_ref()],
         bump = config.config_bump,
     )]
     pub config: Account<'info, Config>,
     #[account(
         mut,
-        seeds = [b"lp", config.key().as_ref()],
+        seeds = [LP_SEED, config.key().as_ref()],
         bump = config.lp_bump,
     )]
     pub mint_lp: Account<'info, Mint>,
@@ -70,48 +75,55 @@ impl<'info> Deposit<'info> {
         max_y: u64,  // Maximum amount of token Y that the user is willing to deposit
     ) -> Result<()> {
         require!(!self.config.locked, AmmError::PoolLocked);
-        require_neq!(amount, 0, AmmError::InvalidAmount);
+        require_neq!(amount, ZERO_AMOUNT, AmmError::InvalidAmount);
 
-        let (x, y) =
-            if self.mint_lp.supply == 0 && self.vault_x.amount == 0 && self.vault_y.amount == 0 {
-                (max_x, max_y)
-            } else {
-                let amounts = ConstantProduct::xy_deposit_amounts_from_l(
-                    self.vault_x.amount,
-                    self.vault_y.amount,
-                    self.mint_lp.supply,
-                    amount,
-                    6,
-                )
-                .unwrap();
+        let (x, y) = if self.mint_lp.supply == ZERO_AMOUNT
+            && self.vault_x.amount == ZERO_AMOUNT
+            && self.vault_y.amount == ZERO_AMOUNT
+        {
+            require!(
+                max_x > ZERO_AMOUNT && max_y > ZERO_AMOUNT,
+                AmmError::InvalidAmount
+            );
+            (max_x, max_y)
+        } else {
+            let amounts = ConstantProduct::xy_deposit_amounts_from_l(
+                self.vault_x.amount,
+                self.vault_y.amount,
+                self.mint_lp.supply,
+                amount,
+                TOKEN_PRECISION,
+            )
+            .map_err(AmmError::from)?;
 
-                require!(
-                    amounts.x <= max_x && amounts.y <= max_y,
-                    AmmError::SlippageExceeded
-                );
+            require!(
+                amounts.x <= max_x && amounts.y <= max_y,
+                AmmError::SlippageExceeded
+            );
 
-                (amounts.x, amounts.y)
-            };
+            (amounts.x, amounts.y)
+        };
 
         // deposit token x
-        self.deposit_tokens(true, x)?;
+        self.deposit_tokens(TokenSide::X, x)?;
         // deposit token y
-        self.deposit_tokens(false, y)?;
+        self.deposit_tokens(TokenSide::Y, y)?;
         // mint lp tokens
         self.mint_lp_tokens(amount)
     }
 
-    pub fn deposit_tokens(&self, is_x: bool, amount: u64) -> Result<()> {
-        let (from, to) = match is_x {
-            true => (
+    fn deposit_tokens(&self, side: TokenSide, amount: u64) -> Result<()> {
+        let (from, to) = select_for_side(
+            side,
+            (
                 self.user_x.to_account_info(),
                 self.vault_x.to_account_info(),
             ),
-            false => (
+            (
                 self.user_y.to_account_info(),
                 self.vault_y.to_account_info(),
             ),
-        };
+        );
 
         let cpi_program = self.token_program.key();
 
@@ -126,7 +138,7 @@ impl<'info> Deposit<'info> {
         transfer(ctx, amount)
     }
 
-    pub fn mint_lp_tokens(&self, amount: u64) -> Result<()> {
+    fn mint_lp_tokens(&self, amount: u64) -> Result<()> {
         let cpi_program = self.token_program.key();
 
         let cpi_accounts = MintTo {
@@ -136,7 +148,7 @@ impl<'info> Deposit<'info> {
         };
 
         let signer_seeds: &[&[&[u8]]] = &[&[
-            b"config",
+            CONFIG_SEED,
             &self.config.seed.to_le_bytes(),
             &[self.config.config_bump],
         ]];

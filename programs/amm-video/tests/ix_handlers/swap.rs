@@ -11,6 +11,7 @@ use {
     solana_signer::Signer,
 };
 
+#[allow(clippy::too_many_arguments)]
 pub fn create_swap_ix(
     mut _svm: &mut LiteSVM,
     payer: &Keypair,
@@ -20,6 +21,11 @@ pub fn create_swap_ix(
     config: Pubkey,
     vault_x: Pubkey,
     vault_y: Pubkey,
+    treasury_x: Pubkey,
+    treasury_y: Pubkey,
+    is_x: bool,
+    amount_in: u64,
+    min_amount_out: u64,
 ) -> Instruction {
     let user = payer.pubkey();
     let user_x = associated_token::get_associated_token_address(&user, &mint_x);
@@ -28,9 +34,9 @@ pub fn create_swap_ix(
     Instruction::new_with_bytes(
         amm_video::id(),
         &amm_video::instruction::Swap {
-            is_x: true,
-            amount_in: 10_000_000,
-            min_amount_out: 5_000_000,
+            is_x,
+            amount_in,
+            min_amount_out,
         }
         .data(),
         amm_video::accounts::Swap {
@@ -41,6 +47,8 @@ pub fn create_swap_ix(
             mint_lp,
             vault_x,
             vault_y,
+            treasury_x,
+            treasury_y,
             user_x,
             user_y,
             token_program: TOKEN_PROGRAM_ID,

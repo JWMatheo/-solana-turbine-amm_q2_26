@@ -1,5 +1,4 @@
 use {
-    amm_video::constants::DEFAULT_POOL_SEED,
     anchor_lang::{
         solana_program::instruction::Instruction, system_program::ID as SYSTEM_PROGRAM_ID,
         InstructionData, ToAccountMetas,
@@ -12,43 +11,36 @@ use {
     solana_signer::Signer,
 };
 
-#[allow(clippy::too_many_arguments)]
-pub fn create_initialise_ix(
-    mut _svm: &mut LiteSVM,
+pub fn create_collect_fees_ix(
+    _svm: &mut LiteSVM,
     payer: &Keypair,
     mint_x: Pubkey,
     mint_y: Pubkey,
     config: Pubkey,
-    mint_lp: Pubkey,
-    vault_x: Pubkey,
-    vault_y: Pubkey,
     treasury_x: Pubkey,
     treasury_y: Pubkey,
-    fee: u16,
 ) -> Instruction {
-    let maker = payer.pubkey();
+    let authority = payer.pubkey();
+    let destination_x =
+        anchor_spl::associated_token::get_associated_token_address(&authority, &mint_x);
+    let destination_y =
+        anchor_spl::associated_token::get_associated_token_address(&authority, &mint_y);
 
     Instruction::new_with_bytes(
         amm_video::id(),
-        &amm_video::instruction::Initialize {
-            seed: DEFAULT_POOL_SEED,
-            fee,
-            authority: Some(maker),
-        }
-        .data(),
-        amm_video::accounts::Initialize {
-            initializer: maker,
+        &amm_video::instruction::CollectFees {}.data(),
+        amm_video::accounts::CollectFees {
+            authority,
             mint_x,
             mint_y,
-            mint_lp,
-            vault_x,
-            vault_y,
             config,
             treasury_x,
             treasury_y,
+            destination_x,
+            destination_y,
             token_program: TOKEN_PROGRAM_ID,
-            associated_token_program: ASSOCIATED_TOKEN_PROGRAM_ID,
             system_program: SYSTEM_PROGRAM_ID,
+            associated_token_program: ASSOCIATED_TOKEN_PROGRAM_ID,
         }
         .to_account_metas(None),
     )

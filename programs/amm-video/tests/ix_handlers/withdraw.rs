@@ -1,4 +1,5 @@
 use {
+    crate::constants::{TEST_WITHDRAW_LP_AMOUNT, TEST_WITHDRAW_MINIMUM},
     anchor_lang::{
         solana_program::instruction::Instruction, system_program::ID as SYSTEM_PROGRAM_ID,
         InstructionData, ToAccountMetas,
@@ -11,6 +12,7 @@ use {
     solana_signer::Signer,
 };
 
+#[allow(clippy::too_many_arguments)]
 pub fn create_withdraw_ix(
     mut _svm: &mut LiteSVM,
     payer: &Keypair,
@@ -29,9 +31,9 @@ pub fn create_withdraw_ix(
     Instruction::new_with_bytes(
         amm_video::id(),
         &amm_video::instruction::Withdraw {
-            amount: 10_000_000,
-            min_x: 20_000_000,
-            min_y: 20_000_000,
+            amount: TEST_WITHDRAW_LP_AMOUNT,
+            min_x: TEST_WITHDRAW_MINIMUM,
+            min_y: TEST_WITHDRAW_MINIMUM,
         }
         .data(),
         amm_video::accounts::Withdraw {

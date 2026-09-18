@@ -1,7 +1,10 @@
+#![allow(clippy::diverging_sub_expression)]
+
 pub mod constants;
 pub mod error;
 pub mod instructions;
 pub mod state;
+mod token_side;
 
 use anchor_lang::prelude::*;
 
@@ -22,6 +25,10 @@ pub mod amm_video {
         authority: Option<Pubkey>,
     ) -> Result<()> {
         ctx.accounts.init(seed, fee, authority, ctx.bumps)
+    }
+
+    pub fn collect_fees(ctx: Context<CollectFees>) -> Result<()> {
+        ctx.accounts.collect_fees()
     }
 
     pub fn deposit(ctx: Context<Deposit>, amount: u64, max_x: u64, max_y: u64) -> Result<()> {

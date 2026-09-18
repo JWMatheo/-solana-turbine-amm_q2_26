@@ -1,4 +1,5 @@
 use {
+    crate::constants::TEST_MINT_AMOUNT,
     anchor_lang::{
         solana_program::instruction::Instruction, system_program::ID as SYSTEM_PROGRAM_ID,
         InstructionData, ToAccountMetas,
@@ -11,8 +12,9 @@ use {
     solana_signer::Signer,
 };
 
+#[allow(clippy::too_many_arguments)]
 pub fn create_deposit_ix(
-    mut svm: &mut LiteSVM,
+    svm: &mut LiteSVM,
     payer: &Keypair,
     mint_x: Pubkey,
     mint_y: Pubkey,
@@ -20,33 +22,57 @@ pub fn create_deposit_ix(
     config: Pubkey,
     vault_x: Pubkey,
     vault_y: Pubkey,
+    amount: u64,
+    max_x: u64,
+    max_y: u64,
 ) -> Instruction {
     let user = payer.pubkey();
 
-    let user_x = CreateAssociatedTokenAccount::new(&mut svm, &payer, &mint_x)
+    let user_x = CreateAssociatedTokenAccount::new(svm, payer, &mint_x)
         .owner(&user)
         .send()
         .unwrap();
-    MintTo::new(&mut svm, &payer, &mint_x, &user_x, 1000000000)
+    MintTo::new(svm, payer, &mint_x, &user_x, TEST_MINT_AMOUNT)
         .send()
         .unwrap();
 
-    let user_y = CreateAssociatedTokenAccount::new(&mut svm, &payer, &mint_y)
+    let user_y = CreateAssociatedTokenAccount::new(svm, payer, &mint_y)
         .owner(&user)
         .send()
         .unwrap();
-    MintTo::new(&mut svm, &payer, &mint_y, &user_y, 1000000000)
+    MintTo::new(svm, payer, &mint_y, &user_y, TEST_MINT_AMOUNT)
         .send()
         .unwrap();
 
+    create_deposit_ix_from_existing(
+        payer, mint_x, mint_y, mint_lp, config, vault_x, vault_y, amount, max_x, max_y,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn create_deposit_ix_from_existing(
+    payer: &Keypair,
+    mint_x: Pubkey,
+    mint_y: Pubkey,
+    mint_lp: Pubkey,
+    config: Pubkey,
+    vault_x: Pubkey,
+    vault_y: Pubkey,
+    amount: u64,
+    max_x: u64,
+    max_y: u64,
+) -> Instruction {
+    let user = payer.pubkey();
+    let user_x = associated_token::get_associated_token_address(&user, &mint_x);
+    let user_y = associated_token::get_associated_token_address(&user, &mint_y);
     let user_lp = associated_token::get_associated_token_address(&user, &mint_lp);
 
     Instruction::new_with_bytes(
         amm_video::id(),
         &amm_video::instruction::Deposit {
-            amount: 100_000_000,
-            max_x: 200_000_000,
-            max_y: 200_000_000,
+            amount,
+            max_x,
+            max_y,
         }
         .data(),
         amm_video::accounts::Deposit {

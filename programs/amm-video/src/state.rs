@@ -7,6 +7,8 @@ pub struct Config {
     pub authority: Option<Pubkey>, // If we want an authority to lock the config account
     pub mint_x: Pubkey,            // Token X
     pub mint_y: Pubkey,            // Token Y
+    pub treasury_x: Pubkey,        // Treasury account for token X fees
+    pub treasury_y: Pubkey,        // Treasury account for token Y fees
     pub fee: u16,                  // Swap fee in basis points
     pub locked: bool,              // If the pool is locked
     pub config_bump: u8,           // Bump seed for the config account
